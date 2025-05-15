@@ -1,42 +1,59 @@
 -- (Query 1) Receita, leads, conversão e ticket médio mês a mês
 -- Colunas: mês, leads (#), vendas (#), receita (k, R$), conversão (%), ticket médio (k, R$)
 
+-- CORREÇÃO --
 
--- Mês e Leads
+with
+	leads as (
+		select 
+			date_trunc('month', visit_page_date)::date as visit_page_month,
+			-- utilizando date_trunc para selecionar o mês e ::date para remover a hora.
+			count (*) as visit_page_count
+		from sales.funnel
+		group by visit_page_month
+		order by visit_page_count desc
+	),
+	payments as (
+		select
+			date_trunc('month', fun.paid_date)::date as paid_month,
+			-- poderia usar também "extract(month from paid_date) as mes"
+			count(fun.paid_date) as paid_count,
+			sum(pro.price * (1+fun.discount)) as receita
+		from sales.funnel as  fun
+		left join sales.products as pro
+			on fun.product_id = pro.product_id
+		where fun.paid_date is not null
+		group by paid_month
+	)
 
 select
-	extract(month from paid_date) as mes, 
-	count(visit_page_date) as Contagem_Leads
-from sales.funnel
-where (extract(month from paid_date)) is not null
-group by extract(month from paid_date)
-order by mes 
+	leads.visit_page_month as "Mês",
+	leads.visit_page_count as "Leads",
+	payments.paid_count as "vendas (#)",
+	(payments.receita/1000) as "receita (k, R$)",
+	(payments.paid_count::float/leads.visit_page_count::float) as "conversão (%)",
+	(payments.receita/payments.paid_count/1000) as "ticket médio (k, R$)"
+from leads
+left join payments
+	on leads.visit_page_month = paid_month
 
--- Vendas
-
-select 
-	--pro.price as "Preço",
-	--ABS(fun.discount) as "Desconto",
-	extract(month from fun.paid_date) as mes, 
-	count(fun.visit_page_date) as contagem_Leads,
-	pro.price - (pro.price * ABS(fun.discount)) as venda_valor
-from sales.products as pro
-left join sales.funnel as fun
-on pro.product_id = fun.product_id
-where (extract(month from paid_date)) is not null
-group by mes, venda_valor
-order by mes
-
-
-
-
-
-
+------------------------------------------------------------------------------------------------------
 
 
 -- (Query 2) Estados que mais venderam
 -- Colunas: país, estado, vendas (#)
 
+select
+	'Brazil' as país,
+	cus.state as estado,
+	count(fun.paid_date) as "Vendas(#)"
+from sales.funnel as fun
+left join sales.customers as cus
+	on fun.customer_id = cus.customer_id
+where fun.paid_date between '2021-08-01' and '2021-08-31'
+group by país, estado
+order by "Vendas(#)" desc
+limit 5
 
 -- (Query 3) Marcas que mais venderam no mês
 -- Colunas: marca, vendas (#)
